@@ -1,52 +1,83 @@
 package task.scheduler;
 
+import java.time.LocalDateTime;
+import java.util.PriorityQueue;
 import java.util.concurrent.Callable;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
-public class TasksScheduler {
+import static java.util.Objects.isNull;
+
+public class TasksScheduler implements WorkerListener {
     private final Thread managingThread;
-    private final TasksPriorityQueue tasksQueue;
-    private final WorkerThreads workerThreads;
+    private final PriorityQueue<ScheduledTask> tasksQueue;
+    private final WorkersSet workersSet;
     private final ReentrantLock monitor;
+    private final Condition stateChanged;
+    private final AtomicLong sequencer;
 
     public TasksScheduler(int workersNumber) {
-        managingThread = new Thread();
-        tasksQueue = new TasksPriorityQueue();
+        managingThread = new Thread(this::runManager);
+        tasksQueue = new PriorityQueue<>();
         monitor = new ReentrantLock();
-        workerThreads = new WorkerThreads(workersNumber);
+        stateChanged = monitor.newCondition();
+        sequencer = new AtomicLong();
+        workersSet = new WorkersSet(workersNumber, this);
     }
 
     public void start() {
-
+        managingThread.start();
     }
 
     public void stop() {
-
+        managingThread.interrupt();
     }
 
-    public <V> void addTask(Callable<V> callable) {
+    public void addTask(Callable callable, LocalDateTime executionTime) {
         monitor.lock();
         try {
-            tasksQueue.add(callable);
-            monitor.notifyAll();
-        }
-        finally {
+            tasksQueue.add(createTask(callable, executionTime));
+            stateChanged.signalAll();
+        } finally {
             monitor.unlock();
         }
     }
 
-    private void run() {
+    @Override
+    public void taskFinished(WorkerThread worker) {
         monitor.lock();
         try {
-            for(;;) {
-                TimedTask nextTask = tasksQueue.get();
-                if (nextTask.getDelay() < 0 && workerThreads.hasFree()) {
-                    tasksQueue.pull();
-                    workerThreads.run(nextTask.getCallable());
+            workersSet.markFree(worker);
+            stateChanged.signalAll();
+        } finally {
+            monitor.unlock();
+        }
+    }
+
+    private void runManager() {
+        monitor.lock();
+        System.out.println("Managing thread started");
+        try {
+            for (; ; ) {
+                ScheduledTask nextTask = tasksQueue.peek();
+                if (isNull(nextTask)) {
+                    stateChanged.await();
+                } else if (nextTask.isReady() && workersSet.hasFree()) {
+                    tasksQueue.poll();
+                    workersSet.executeTask(nextTask.getCallable());
                 } else {
-                    monitor.wait(nextTask.getDelay());
+                    stateChanged.awaitNanos(nextTask.getDelayNanos());
                 }
             }
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        } finally {
+            monitor.unlock();
         }
+    }
+
+    private ScheduledTask createTask(Callable callable, LocalDateTime executionTime) {
+        return new ScheduledTask(callable, executionTime, sequencer.getAndIncrement());
     }
 }
