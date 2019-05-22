@@ -3,10 +3,13 @@ package task.scheduler;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
 
 public class ScheduledTask implements Comparable<ScheduledTask> {
+    private final static ZoneOffset CURRENT_ZONE_OFFSET = OffsetDateTime.now().getOffset();
+
     private final long sequenceNumber;
     private final LocalDateTime executionTime;
     private final Callable callable;
@@ -18,7 +21,6 @@ public class ScheduledTask implements Comparable<ScheduledTask> {
         this.executionTime = executionTime;
         this.callable = callable;
     }
-
 
     public long getDelayNanos() {
         return getDelay();
@@ -56,12 +58,12 @@ public class ScheduledTask implements Comparable<ScheduledTask> {
         return 0;
     }
 
-    private long nanosExecutionTime() {
-        Instant instant = executionTime.toInstant(OffsetDateTime.now().getOffset());
-        return TimeUnit.SECONDS.toNanos(instant.getEpochSecond()) + instant.getNano();
+    private long getDelay() {
+        return toNanos(executionTime) - toNanos(LocalDateTime.now());
     }
 
-    private long getDelay() {
-        return nanosExecutionTime() - System.nanoTime();
+    private long toNanos(LocalDateTime dateTime) {
+        Instant instant = dateTime.toInstant(CURRENT_ZONE_OFFSET);
+        return TimeUnit.SECONDS.toNanos(instant.getEpochSecond()) + instant.getNano();
     }
 }

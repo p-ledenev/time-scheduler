@@ -57,7 +57,7 @@ public class TasksScheduler implements WorkerListener {
 
     private void runManager() {
         monitor.lock();
-        System.out.println("Managing thread started");
+        System.out.println("Scheduler manager started");
         try {
             for (; ; ) {
                 ScheduledTask nextTask = tasksQueue.peek();
@@ -71,7 +71,7 @@ public class TasksScheduler implements WorkerListener {
                 }
             }
         } catch (InterruptedException e) {
-            throw new RuntimeException(e);
+            System.out.println("Manager was shut down");
         } finally {
             monitor.unlock();
         }
