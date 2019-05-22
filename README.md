@@ -1,2 +1,2 @@
 # time-scheduler
-Task scheduler implementation (for practicing sake only) with some thread pool
+Task scheduler implementation (for practice sake only) with some thread pool
